@@ -1,0 +1,14 @@
+name: BigBroker
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - numba
+  - numba-cuda
+  - numpy
+  - pandas
+  - scikit-learn
+  - scipy
+  - pyarrow
+  - tqdm
