@@ -1,6 +1,6 @@
 # Big broker is tracking you! A privacy assessment of large-scale location trace datasets
 
-This repository contains the implementation of the attack described in the paper "Big broker is tracking you! A privacy assessment of large-scale location trace datasets".
+This repository contains the implementation of the methodology described in the paper "Big broker is tracking you! A privacy assessment of large-scale location trace datasets".
 
 ## Abstract
 
@@ -13,13 +13,13 @@ The files in this repository are structured as follows:
 *	**clustering.py**: contains code to perform the clustering of the location reports
 *	**social_graph.py**: contains the social graph construction step
 *	**social_graph_gpu.py**: contains the gpu version of the social graph construction step
-*	**pipeline.py**: contains code to run all stages of the attack in order
-*	**environment.yml**: contains the minimal packages required to execute the attack
+*	**pipeline.py**: contains code to run all stages of the implementation in order
+*	**environment.yml**: contains the minimal packages required to execute the implementation
 *	**st_dbscan.py**: our modified version of st_dbscan which has support for chunking as described in the paper.
 
 ## Input dataset structure
 
-Each dataset of location reports on which the attack is performed must contain the following columns:
+Each dataset of location reports on which the implementation is performed must contain the following columns:
 *	**DEVICE_ID**: The device identifier as an integer greater then zero.
 *	**LAT**: The report latitude as a float.
 *	**LON**: The report longitude as a float.
