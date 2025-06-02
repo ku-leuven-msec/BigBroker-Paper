@@ -12,3 +12,6 @@ dependencies:
   - scipy
   - pyarrow
   - tqdm
+  - pip
+  - pip:
+      - haversine

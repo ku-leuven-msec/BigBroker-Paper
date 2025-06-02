@@ -7,8 +7,8 @@ os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
 os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
-from sklearn.cluster import DBSCAN
 from st_dbscan import ST_DBSCAN
+from haversine import haversine_vector, Unit
 
 import numpy as np
 import pandas as pd
@@ -20,6 +20,7 @@ pd.set_option("mode.copy_on_write", True)
 pd.options.mode.copy_on_write = True
 
 num_cores : int = cpu_count()
+eps_spatial_meters : float
 eps_spatial : float
 eps_temporal : float = 1 / (24*2)
 points_threshold = 50001
@@ -27,7 +28,8 @@ chunk_size = 50000
 
 
 def find_clusters_worker_init(config):
-    global eps_spatial, eps_temporal, points_threshold
+    global eps_spatial_meters, eps_spatial, eps_temporal, points_threshold
+    eps_spatial_meters = config["clustering"]["eps_spatial"]
     eps_spatial = config["clustering"]["eps_spatial"] * 0.001 / 6371.0088
     if "eps_temporal" in config["clustering"]:
         eps_temporal = config["clustering"]["eps_temporal"]
@@ -36,17 +38,41 @@ def find_clusters_worker_init(config):
 
 
 def find_clusters_worker(data):
-    global eps_spatial, eps_temporal, points_threshold
+    global eps_spatial_meters, eps_spatial, eps_temporal, points_threshold
     index, df = data
 
     df = df.copy()
-    filter_duplicate = df.duplicated(keep=False)
-    df.loc[filter_duplicate,["LAT", "LON"]] += np.random.choice(np.arange(-0.0000001, 0.0000001, 0.00000000001),
-                                                                  sum(filter_duplicate) * 2).reshape((sum(filter_duplicate), 2)).astype(np.float32)
-    radian_values = np.radians(df[["LAT", "LON"]].astype(np.float32))
-    df["CLUSTERS_TEMPORAL"] = ST_DBSCAN(eps1=eps_spatial, eps2=eps_temporal, min_samples=3, n_jobs=1, metric_spatial='haversine').fit_frame_split_new(
-        np.concatenate([df[["EVENT_TIMESTAMP"]], radian_values], axis=1), 200).labels.astype(np.int16)
+    filter_duplicate = df[["LAT", "LON"]].duplicated(keep=False)
+    df.loc[filter_duplicate, ["LAT", "LON"]] += np.random.choice(np.arange(-0.0000001, 0.0000001, 0.00000000001),
+                                                                 sum(filter_duplicate) * 2).reshape(
+        (sum(filter_duplicate), 2)).astype(np.float32)
+    df["dist_from_center"] = 0.0
+    df["CLUSTERS_TEMPORAL"] = 0
+    radian_values = np.array(np.radians(df[["LAT", "LON"]].astype(np.float32)))
+    all_indices = np.arange(len(df))
+    curr_indices = all_indices[:]
+    curr_eps = eps_spatial
+    while len(curr_indices):
+        new_clusters = ST_DBSCAN(eps1=curr_eps, eps2=eps_temporal, min_samples=3, n_jobs=1,
+                                 metric_spatial='haversine').fit_frame_split_new(
+            np.concatenate([df.iloc[curr_indices, [df.columns.get_loc("EVENT_TIMESTAMP")]], radian_values[curr_indices]],axis=1), 200).labels
+        new_clusters = np.where(new_clusters == -1, new_clusters, new_clusters + df["CLUSTERS_TEMPORAL"].max() + 1)
+        df.iloc[curr_indices, df.columns.get_loc("CLUSTERS_TEMPORAL")] = new_clusters
 
+        df["LAT_M"] = df.groupby(["CLUSTERS_TEMPORAL"])["LAT"].transform("mean")
+        df["LON_M"] = df.groupby(["CLUSTERS_TEMPORAL"])["LON"].transform("mean")
+        df["dist_from_center"] = haversine_vector(df[["LAT", "LON"]], df[["LAT_M", "LON_M"]], Unit.METERS)
+        df["radius"] = df.groupby("CLUSTERS_TEMPORAL")["dist_from_center"].transform("max")
+        curr_indices = all_indices[(df[df["CLUSTERS_TEMPORAL"] > -1]["radius"] > 3 * eps_spatial_meters) & (df["CLUSTERS_TEMPORAL"] > -1)]
+        curr_eps = 0.95 * curr_eps
+
+    df = df.sort_values("CLUSTERS_TEMPORAL")
+    df["CLUSTERS_TEMPORAL"] = df["CLUSTERS_TEMPORAL"].astype("category").cat.codes - 1
+    df = df.sort_values("index")
+
+    df["CLUSTERS_TEMPORAL"] = df["CLUSTERS_TEMPORAL"].astype(np.int16)
+
+    df = df[['index', 'DEVICE_ID', 'LAT', 'LON', 'EVENT_TIMESTAMP', 'CLUSTERS_TEMPORAL']].copy()
     return df
     
 
